@@ -1,0 +1,103 @@
+---
+title: "Lab 5"
+author: "Abagail Ohmer"
+date: "11/15/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background: FARS data
+```{r, warning=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+
+acc <- read.csv("https://raw.githubusercontent.com/xdaiISU/ds202materials/master/hwlabs/fars2017/accident.csv", stringsAsFactors = FALSE)
+
+per <- read.csv("https://raw.githubusercontent.com/xdaiISU/ds202materials/master/hwlabs/fars2017/person.csv", stringsAsFactors = FALSE)
+```
+
+## 1.
+```{r, warning = FALSE}
+fatal <- per %>% filter(INJ_SEV == 4)
+head(fatal, 3)
+```
+
+## 2.
+```{r, warning = FALSE}
+danVeh <- fatal %>% filter(!(MAKE == "NA")) %>% group_by(STATE, MAKE) %>%  summarize(fatal = n()) %>% group_by(STATE) %>% filter(fatal == max(fatal))
+
+head(danVeh, 10)
+```
+
+## 3.
+The definition of the most dangerous vehicle is the type of vehicle with the most people who are fatally hurt in car accidents. From the graph we can see the regions of the US that have a certain type of car as the most dangerous. We can see overall, that Chevrolet have the most states with it as the dangerous vehicle.
+```{r, warning=FALSE}
+GLC <- readxl::read_xlsx("GLC.xlsx")
+GLC <- GLC %>% rename(NAME = `State Name`) 
+GLC <- GLC %>% rename(STATE = `State Code`)
+
+GLC$STATE <- as.numeric(GLC$STATE)
+GLC$NAME <- tolower(GLC$NAME)
+GLC$'City Code' <- as.numeric(GLC$'City Code')
+GLC$'County Code' <- as.numeric(GLC$'County Code')
+danVeh$region <- tolower(danVeh$STATE)
+
+USstate <- map_data('state')
+
+name <- USstate %>% group_by(region) %>% summarize(long = mean(long, na.rm = TRUE), lat = mean(lat, na.rm = TRUE)) %>% left_join(GLC, by = c("region" = "NAME")) 
+name <- left_join(name, danVeh, by = "STATE")
+
+name$MAKE <- factor(name$MAKE, levels = c(20, 12, 49, 37), labels = c("Chevrolet", "Ford", "Toyota", "Honda"))
+
+ggplot(USstate, aes(x = long, y = lat)) + geom_polygon(aes(x = long, y = lat, group = group), color = 'black', fill = 'white') + geom_text(data = name, aes(long, lat, label = MAKE), color = 'red', size = 3, check_overlap = TRUE) + xlab("Longitude") + ylab("Latitude") + ggtitle("Most Dangerous Vehicle in Each State")
+```
+
+## 4.
+```{r}
+accPer <- acc %>% full_join(per, by = c("STATE", "ST_CASE", "VE_FORMS", "COUNTY", "DAY", "MONTH", "HOUR", "MINUTE", "RUR_URB", "FUNC_SYS", "HARM_EV", "MAN_COLL", "SCH_BUS"))
+
+head(accPer, 3)
+```
+
+## 5.
+From the graph, we can see that the most accidents for males happens on Friday at approx. 6pm, and for women, it is also on Friday at 6pm. The Least accidents for both males and females is on Tuesday.
+```{r, warning = FALSE}
+accPer <- accPer %>% filter((SEX == 1 || SEX == 2) && (HOUR < 25))
+
+accPer$SEX <- factor(accPer$SEX, levels = c(1, 2), labels = c("Male", "Female"))
+accPer$DAY_WEEK <- factor(accPer$DAY_WEEK, levels = c(1,2,3,4,5,6,7), labels = c("Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat"))
+
+
+accPer %>% group_by(SEX, DAY_WEEK, HOUR) %>% summarise(count = n()) %>% group_by(SEX) %>% filter(count == max(count)) %>% arrange(desc(count))
+
+tally <- accPer %>% group_by(SEX, DAY_WEEK, HOUR) %>% summarise(count = n()) %>% filter(!(HOUR == 99)) %>% filter(!(SEX == 9))
+
+
+ggplot(tally, aes(x = HOUR, y = count)) + geom_line() + facet_grid(SEX ~ DAY_WEEK, scales = 'free') + xlab("Hour") + ylab("Count") + ggtitle("Gender vs. Daily Fatal Car Accidents by Hour")
+```
+
+## 6.
+The mid Us has the least fatal car accidents while (in grey). There is almost none with more than 600 deaths (white) and the majority of the US has approx 200 fatal car accidents (dark blue). California area has more fatal car accidents (light blue).
+```{r, warning = FALSE}
+GLC <- GLC %>% rename(CNAME = "County Name")
+GLC <- GLC %>% rename(COUNTY = "County Code")
+GLC$COUNTY <- as.integer(GLC$COUNTY)
+
+dead <- acc %>% select(c("STATE", "COUNTY", "FATALS")) %>%  group_by(STATE, COUNTY) %>% summarize(death = sum(FATALS))
+
+dead <- dead %>% left_join(GLC, by = c('COUNTY', 'STATE'))
+dead <- unique(dead[c('NAME', 'CNAME', 'death')])
+dead$CNAME <- tolower(dead$CNAME)
+map <- map_data('county')
+dead <- dead %>% right_join(map, by = c(CNAME = 'subregion', NAME = 'region'))
+
+dead %>% ggplot(aes(x = long, y = lat, group= group, fill = death)) + geom_polygon() + ggtitle("Total Deaths in each County") + xlab("Latitude") + ylab("Longitude")
+```
+
+## 7. Theory~
+Summer would be June - Aug and Winter would be Dec - Feb.
+Use fatal and filter months into 2 variables based on winter or summer. group by the season. Follow similar steps as the previous state problem!
